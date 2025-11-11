@@ -3,6 +3,9 @@ import { VATHistory } from '@/types/vat'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 
+// Clé de stockage localStorage
+const HISTORY_STORAGE_KEY = 'vat-validation-history'
+
 export default function ValidationHistory() {
   const [history, setHistory] = useState<VATHistory[]>([])
   const [loading, setLoading] = useState(true)
@@ -10,23 +13,48 @@ export default function ValidationHistory() {
 
   useEffect(() => {
     fetchHistory()
+    
+    // Écouter les événements de validation pour mettre à jour l'historique
+    const handleValidation = (event: CustomEvent) => {
+      addToHistory(event.detail)
+    }
+    
+    window.addEventListener('vat-validated' as any, handleValidation as any)
+    
+    return () => {
+      window.removeEventListener('vat-validated' as any, handleValidation as any)
+    }
   }, [])
 
   const fetchHistory = async () => {
     try {
-      const response = await fetch('/api/history')
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to fetch history')
+      // Charger depuis localStorage pour le MVP
+      const storedHistory = localStorage.getItem(HISTORY_STORAGE_KEY)
+      if (storedHistory) {
+        setHistory(JSON.parse(storedHistory))
       }
-
-      setHistory(data)
     } catch (err: any) {
       setError(err.message)
     } finally {
       setLoading(false)
     }
+  }
+
+  const addToHistory = (validation: any) => {
+    const newEntry: VATHistory = {
+      id: Date.now().toString(),
+      vat_number: validation.vatNumber,
+      country_code: validation.country || validation.countryCode,
+      is_valid: validation.valid,
+      company_name: validation.name || null,
+      company_address: validation.address || null,
+      validation_date: validation.requestDate || new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    }
+
+    const updatedHistory = [newEntry, ...history].slice(0, 100) // Garder les 100 derniers
+    setHistory(updatedHistory)
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(updatedHistory))
   }
 
   if (loading) {

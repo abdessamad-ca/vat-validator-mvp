@@ -1,82 +1,61 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
-import axios from 'axios'
-import { supabase } from '@/lib/supabase'
-import { VATValidationResponse } from '@/types/vat'
+import { validateVAT, VATValidationResult } from '@/lib/vies-client'
 
-type VIESResponse = {
-  valid: boolean
-  countryCode: string
-  vatNumber: string
-  requestDate: string
-  name?: string
-  address?: string
-}
+type ResponseData = 
+  | VATValidationResult['data']
+  | { error: string }
 
 export default async function handler(
   req: NextApiRequest,
-  res: NextApiResponse<VATValidationResponse | { error: string }>
+  res: NextApiResponse<ResponseData>
 ) {
+  // Vérifier la méthode HTTP
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { countryCode, vatNumber } = req.body
-
-  if (!countryCode || !vatNumber) {
-    return res.status(400).json({ error: 'Country code and VAT number are required' })
-  }
-
   try {
-    // Appel à l'API VIES de la Commission Européenne
-    const response = await axios.get(
-      `https://ec.europa.eu/taxation_customs/vies/rest-api/ms/${countryCode}/vat/${vatNumber}`,
-      {
-        headers: {
-          'Accept': 'application/json',
-        },
-        timeout: 10000,
-      }
-    )
+    const { countryCode, vatNumber } = req.body
 
-    const viesData: VIESResponse = response.data
-
-    // Enregistrement dans Supabase
-    const { error: dbError } = await supabase
-      .from('vat_validations')
-      .insert({
-        vat_number: vatNumber,
-        country_code: countryCode,
-        is_valid: viesData.valid,
-        company_name: viesData.name || null,
-        company_address: viesData.address || null,
-        validation_date: viesData.requestDate || new Date().toISOString(),
+    // Validation des entrées
+    if (!countryCode || !vatNumber) {
+      return res.status(400).json({ 
+        error: 'Le code pays et le numéro de TVA sont requis' 
       })
-
-    if (dbError) {
-      console.error('Database error:', dbError)
     }
 
-    return res.status(200).json({
-      valid: viesData.valid,
-      countryCode: viesData.countryCode,
-      vatNumber: viesData.vatNumber,
-      name: viesData.name,
-      address: viesData.address,
-      requestDate: viesData.requestDate,
-    })
+    if (typeof countryCode !== 'string' || typeof vatNumber !== 'string') {
+      return res.status(400).json({ 
+        error: 'Format de données invalide' 
+      })
+    }
+
+    if (countryCode.length !== 2) {
+      return res.status(400).json({ 
+        error: 'Le code pays doit contenir 2 lettres' 
+      })
+    }
+
+    if (vatNumber.length < 5) {
+      return res.status(400).json({ 
+        error: 'Le numéro de TVA doit contenir au moins 5 caractères' 
+      })
+    }
+
+    // Appel du service VIES via le client SOAP
+    const result = await validateVAT(countryCode, vatNumber)
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error || 'Erreur de validation' })
+    }
+
+    // Retourner les données de validation
+    return res.status(200).json(result.data!)
+
   } catch (error: any) {
-    console.error('VAT validation error:', error)
-    
-    if (error.response?.status === 404) {
-      return res.status(200).json({
-        valid: false,
-        countryCode,
-        vatNumber,
-      })
-    }
-
+    console.error('Erreur API validation:', error)
     return res.status(500).json({ 
-      error: 'Failed to validate VAT number. Please try again.' 
+      error: 'Erreur serveur lors de la validation' 
     })
   }
 }

@@ -68,6 +68,13 @@ export async function validateVAT(
     const soapFault = error?.root?.Envelope?.Body?.Fault?.faultstring;
 
     if (soapFault) {
+      if (soapFault.includes('MS_MAX_CONCURRENT_REQ')) {
+        return {
+          success: false,
+          error: 'Le service VIES est temporairement surchargé. Veuillez réessayer dans quelques secondes.',
+        };
+      }
+
       if (soapFault.includes('MS_UNAVAILABLE')) {
         return {
           success: false,

@@ -60,6 +60,11 @@ export default function VATValidator() {
       }
 
       setResult(data)
+      
+      // Émettre un événement pour mettre à jour l'historique
+      if (data.valid) {
+        window.dispatchEvent(new CustomEvent('vat-validated', { detail: data }))
+      }
     } catch (err: any) {
       setError(err.message || 'An error occurred')
     } finally {
@@ -119,6 +124,14 @@ export default function VATValidator() {
       {error && (
         <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-md">
           <p className="text-red-800">{error}</p>
+          {error.includes('surchargé') && (
+            <button
+              onClick={handleSubmit}
+              className="mt-3 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
+            >
+              🔄 Réessayer maintenant
+            </button>
+          )}
         </div>
       )}
 
